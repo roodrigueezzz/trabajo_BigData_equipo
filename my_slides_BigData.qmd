@@ -1,0 +1,1091 @@
+---
+title: "El problema ferroviario de España"  #- título
+date: 2022-12-23              #- ISO8601 YYYY-MM-DD format 
+date-format: short
+execute:
+  echo: false
+format: 
+  revealjs:
+    scrollable: true
+    slide-level: 2
+    height: 900
+    width: 1600
+    toc: false
+    center-title-slide: true
+    title-slide-attributes: #- atributos para la slide de titulo
+      data-background-color: "#313a8f"   #- color de R-ladies
+    preview-links: auto  #- true: abre un iframe en lugar de abrir ventana
+    link-external-newwindow: true
+    transition: slide
+    fontcolor: "#262d36"
+    highlight-style: a11y
+    code-line-numbers: true
+    number-sections: false
+    slide-number: c/t  
+    incremental: false 
+revealjs-plugins:
+  - confetti
+
+footer: |
+  Slides hechas con [Quarto](https://quarto.org/) 
+
+---
+
+# La previa
+
+
+
+```{r}
+
+library(tidyverse) #install.packages("tidyverse")
+library(sf) #install.packages("sf")
+library(DT) #install.packages("DT")
+library(countrycode) #install.packages("countrycode")
+library(ggThemeAssist) #install.packages("ggThemeAssist")
+library(patchwork) #install.packages("patchwork")
+library(plotly) #-install.packages("plotly")
+library(knitr) #install.packages("plotly")
+library(tibble) #install.packages("tibble")
+library(ggthemes) #install.packages("ggthemes)
+library(patchwork) #install.packages("patchwork")
+library(ggrepel) #install.packages("ggrepel")
+library(ggspatial) #install.packages("ggspatial")
+library(rnaturalearth) #install.packages("rnaturalearth")
+library(rnaturalearthdata) #install.packages("rnaturalearthdata")
+library(pjpv2020.01) #install.packages("pjpv2020.01")
+library(gganimate) #install.packages("gganimate")
+library(gifski) #install.packages("gifski")
+library(gt) #install.packages("gt")
+library(kableExtra) #install.packages("kableExtra")
+library(leaflet) #install.packages("leaflet")
+library(leafem) #install.packages("leafem")
+library(tmap) #install.packages("tmap")
+library(leaflet) #install.packages("leaflet")
+library(vembedr) #devtools::install_github("ijlyttle/vembedr")
+library(lubridate) #install.packages("lubridate")
+library(WDI)  #install.packages('WDI')
+
+```
+Hemos decidido  utilizar datos de la web [EUROSTAT](https://ec.europa.eu/eurostat). 
+
+Los datos se pueden cargar gracias al paquete de eurostat, que se puede instalar de la siguiente manera:
+
+```{r, echo=TRUE}
+# install.packages("eurostat")
+library(eurostat)
+```
+Vamos a usar los siguientes datasets.
+
+`rail_pa_speed` <- [Página web](https://ec.europa.eu/eurostat/databrowser/view/RAIL_PA_SPEED/default/table?lang=en&category=rail.rail_pa)
+
+`rail_if_line_sp` <- [Página web](https://ec.europa.eu/eurostat/databrowser/view/RAIL_IF_LINE_SP/default/table?lang=en&category=rail.rail_if)
+
+`rail_go_total` <- [Página web](https://ec.europa.eu/eurostat/databrowser/view/RAIL_GO_TOTAL__custom_888427/bookmark/table?lang=en&bookmarkId=8a481de3-5c50-4562-8d9b-5e412a6c7b28)
+
+`rail_if_line_na` <- [Página web](https://ec.europa.eu/eurostat/databrowser/view/RAIL_IF_LINE_NA/default/table?lang=en&category=rail.rail_if)
+
+`rail_go_typeall` <- [Página web](https://ec.europa.eu/eurostat/databrowser/view/RAIL_GO_TYPEALL/default/table?lang=en&category=rail.rail_go.rail_go_)
+
+Los datastets contienen observaciones sobre la mayoría de paises de europa sobre los kilómetros de vias de trenes, los pasajeros, las mercancías.
+
+---
+
+</center>![Xd](./imagenes/meme.png){width="400" height="800"}</center>
+
+
+
+# ¿Por que este trabajo?
+
+El año pasado para la asignatura de **Política Económica II** se nos instó a leer un libro de forma voluntaria.
+
+En este libro, en el cuál hemos basado y obtenido la idea para este trabajo.
+
+Lo que pretende el autor es hacer una crítica sobre la ineficiencia observada al modelo de infraestructuras español, donde, especialmente los últimos años, se ha visto una política orientada a cumplir otros objetivos que no tienen que ver con los de eficiencia y aumento de la productividad del sistema.
+
+Combinaremos las ideas de este libro con el poder de las herramientas de la programación en **RStudio** que hemos aprendido y desarrollado al largo del curso en la asignatura de Programación y manejo de datos en la era del Big Data, con la finalidad de ver si somos capaces de poner en práctica todo lo aprendido y que nuestro guapo profesor nos apruebe (por favor).
+
+---
+
+<div>
+<p style = 'text-align:center;'>
+<img src="https://imagessl6.casadellibro.com/a/l/t7/96/9788423346196.jpg" alt="JuveYell" width="550px">
+</p>
+</div>
+
+# 1. Panorama europeo
+
+Antes de analizar el verdadero problema de España, vamos a observar y analizar, en la medida de lo posible, lo que sucede afuera de nuestro país, con una serie de datos en un tema tras trasnversal como son las infraestructuras ferroviarias
+
+# 1.1 Pasajeros
+
+```{r}
+pasaj_via <- get_eurostat(id = "rail_pa_speed")
+
+pasaj_via$geo = countrycode(pasaj_via$geo, "iso2c", "country.name")
+
+options(scipen = 999)
+
+pasaj_via <- pasaj_via %>%
+  mutate(time = as.character(time)) %>%
+  mutate(Unidad_medidad = 
+           case_when(unit == "MIO_PKM" ~ "Pasajero x KM",
+                     unit == "PAS" ~ "Pasajeros" 
+                     )) %>%
+  mutate(Tipo_de_tren = 
+           case_when(vehicle == "TRN_CV" ~ "Tren Baja Velocidad",
+                     vehicle == "TRN_HSPD" ~ "Tren Alta Velocidad", 
+                     vehicle == "TRN_THSPD" ~ "Tren Media Velocidad",
+                     vehicle == "TOTAL" ~ "Total"
+                     ))
+
+  
+pasaj_via <- pasaj_via %>%
+   mutate (Año = time) %>% 
+   mutate(Valores_Tren = as.integer(round(values))) %>%
+   arrange(geo) %>%
+   filter(Valores_Tren > 1) %>%
+   select("Unidad_medidad", "Tipo_de_tren", "geo", "Año", "Valores_Tren") 
+ 
+ #Pasamos la columna "Año" como dato tipo "date"
+ 
+pasaj_via$Año <- as.Date(pasaj_via$Año) 
+ 
+ #Convertimos la fecha en año
+ 
+pasaj_via$Año <- year(pasaj_via$Año)
+ 
+ #Añadimos algunos datos a mano, ya que no nos los proporciona eurostat
+ 
+pasaj_via1 <- pasaj_via %>% add_row(Unidad_medidad = "Pasajeros", Tipo_de_tren = "Tren Alta Velocidad", geo = "Spain", Año = 2018, Valores_Tren = 21333)
+ 
+pasaj_via1 <- pasaj_via1 %>% add_row(Unidad_medidad = "Pasajeros", Tipo_de_tren = "Tren Alta Velocidad", geo = "Spain", Año = 2017, Valores_Tren = 20558)
+ 
+pasaj_via1 <- pasaj_via1 %>% add_row(Unidad_medidad = "Pasajeros", Tipo_de_tren = "Tren Alta Velocidad", geo = "Spain", Año = 2016, Valores_Tren = 20353)
+ 
+pasaj_via1 <- pasaj_via1 %>% add_row(Unidad_medidad = "Pasajeros", Tipo_de_tren = "Tren Alta Velocidad", geo = "Spain", Año = 2015, Valores_Tren = 19428)
+
+#Para acabar quitamos los NA
+
+pasaj_via1 <- pasaj_via1 %>%
+  filter(!is.na(geo))
+
+```
+
+```{r}
+datatable(pasaj_via1, colnames = c("Pais" = "geo", "Nº Pasajeros (miles)" = "Valores_Tren"), options = list(pageLength = 5))
+```
+
+
+---
+Con los datos ya limpios y listos para usarlos, lo guardamos en la carperta pruebas por si sufre alguna modificación durante la realización del trabajo
+
+```{r, echo=TRUE}
+#Guardamos los datos para tenerlos intactos ante cualquier modificacion
+ 
+ruta_via <- here::here("datos", "pasaj_via1.rds")
+rio::export(pasaj_via1, ruta_via)
+
+# Si necesitamos cargar los datos al global environment:
+# ruta_via <- here::here("datos", "pasaj_via1.rds")
+# pasaj_via1 <-rio::import(ruta_via)
+```
+
+
+# Tipos de trenes 
+
+::: {.panel-tabset}
+
+## Baja
+
+Los trenes de ***baja velocidad*** son aquellos que se caracterizan por tener una velocidad máxima relativamente baja en comparación con otros tipos de trenes, esto se debe a que están diseñados para realizar trayectos a corta o media distancia y para transportar principalmente a pasajeros.
+
+  Los trenes de baja velocidad suelen utilizarse en áreas urbanas   y suburbanas, y pueden ser una opción de transporte público eficiente y sostenible en estos entornos.
+
+<p style = 'text-align:center;'>
+<img src="https://images.ecestaticos.com/4X-XWtgyzK4hoHIiW4g_as1G4VA=/0x0:1164x732/1200x900/filters:fill(white):format(jpg)/f.elconfidencial.com%2Foriginal%2Fae3%2Ff11%2Fdf9%2Fae3f11df9abd02ee38925f1bfe8d1fe0.jpg" alt="JuveYell" width="300px">
+</p>
+
+## Media
+
+Los trenes de ***media velocidad*** son aquellos que se caracterizan por tener una velocidad máxima intermedia en comparación con otros tipos de y están diseñados para realizar trayectos a media y larga distancia y para transportar principalmente a pasajeros.
+
+Estos ofrecen una serie de ventajas, como una mayor velocidad que los trenes de baja velocidad y una   mayor capacidad de carga que los trenes de alta velocidad.        Además, pueden ser una opción de transporte más sostenible y menos contaminante que otros medios de transporte, como aviones o coches.
+
+<p style = 'text-align:center;'>
+<img src="https://www.talgo.com/documents/112909/133620/Productos+Talgo+350.jpg/2e31d602-bc5e-f8d3-26c0-11c9392e0177?t=1590582203909" alt="JuveYell" width="300px">
+</p>
+
+## Alta
+
+Los trenes de ***alta velocidad*** son aquellos que se caracterizan por tener una velocidad máxima relativamente alta en comparación con otros tipos de trenes, como los trenes de baja velocidad o los trenes de carga. Estos trenes están diseñados para realizar trayectos a larga distancia y para transportar principalmente a pasajeros.
+
+Estos suelen tener una velocidad máxima de más de 250 km/h y pueden ser utilizados tanto en áreas urbanas como rurales. Y en algunos casos, los trenes de alta      velocidad también pueden ser utilizados para el transporte de mercancías a larga distancia.
+
+<p style = 'text-align:center;'>
+<img src="https://dircomfidencial.com/wp-content/uploads/2022/01/tren-AVE-656x368-1.jpg" alt="JuveYell" width="300px">
+</p>
+
+:::
+
+# Primer grafico
+
+```{r}
+#Como la tabla nos ofrece los pasajeros totales y el numero de pasajeros por km de via lo separamos
+ 
+Tren_Pasaj <- pasaj_via1 %>%
+  filter(Unidad_medidad == "Pasajeros")
+
+Tren_Mxp <- pasaj_via1 %>%
+  filter(Unidad_medidad == "Pasajero x KM")
+
+#Filtramos por totales
+
+Tren_Pasaj <- Tren_Pasaj %>%
+  filter(Tipo_de_tren == "Total")
+
+Tren_Mxp <- Tren_Mxp %>%
+  filter(Tipo_de_tren == "Total")
+```
+
+
+
+## Base
+
+```{r, fig.width=10, fig.height=5}
+Grafico_1a <- ggplot(Tren_Pasaj) +
+  aes(x = Año, y = Valores_Tren, colour = geo) +
+  geom_step(size = 0.5) +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Pasajeros (en miles)",
+    title = "Evolución de pasajeros de tren en los diferentes paises de Europa"
+  ) +
+  ggthemes::theme_base()
+
+Grafico_1a
+```
+
+## 1ª evolucion
+
+```{r, fig.height=8}
+Grafico_1b <- ggplot(Tren_Pasaj) +
+  aes(x = Año, y = Valores_Tren) +
+  geom_step(size = 0.5, colour = "#389CEF") +
+  labs(
+    y = "Pasajeros (en miles)",
+    title = "Evolución de pasajeros de tren en los diferentes paises Europeos"
+  ) +
+  ggthemes::theme_base() +
+  facet_wrap(vars(geo)) + theme(axis.text.y = element_text(size = 8), axis.text.x = element_text(size = 8))
+
+Grafico_1b
+```
+
+## Fase final
+
+
+```{r, fig.height=8}
+
+Grafico_1c <- Tren_Pasaj %>%
+  filter(Año >= 2007L & Año <= 2019L) %>%
+  ggplot() +
+  aes(x = Año, y = Valores_Tren, colour = Tipo_de_tren) +
+  geom_step(size = 0.5) +
+  scale_color_manual(values = c(Total = "#34A2F2")) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(geo), scales = "free_y") + theme(axis.text = element_text(size = 8)) +labs(title = "Evolución de los pasajeros de tren en los diferentes paises Europeos",
+    x = NULL, y = "Pasajeros (en miles)")
+
+Grafico_1c
+
+```
+
+# Segundo gráfico
+
+## Base
+
+```{r}
+
+Grafico_2a <- ggplot(Tren_Mxp) +
+  aes(x = Año, y = Valores_Tren, colour = geo) +
+  geom_step(size = 0.5) +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Pasajeros por KM",
+    title = "Evolución de pasajeros por KM de vía en los diferentes paises de Europa"
+  ) +
+  ggthemes::theme_base()
+
+Grafico_2a
+
+```
+
+## Primera evolución
+
+```{r, fig.height= 8}
+
+Grafico_2b <- ggplot(Tren_Mxp) +
+  aes(x = Año, y = Valores_Tren) +
+  geom_step(size = 0.5, colour = "#7CABFF") +
+  labs(
+    y = "Pasajeros por KM",
+    title = "Evolución de pasajeros por KM de vía en los diferentes paises de Europa"
+  ) +
+  ggthemes::theme_base() +
+  facet_wrap(vars(geo)) + theme(axis.text.x = element_text(size = 8),
+    axis.text.y = element_text(size = 8))
+
+Grafico_2b
+
+```
+
+## Fase final
+
+```{r, fig.height=8}
+
+Grafico_2C <- Tren_Mxp %>%
+  filter(Año >= 2013L & Año <= 2019L) %>%
+  ggplot() +
+  aes(x = Año, y = Valores_Tren, colour = Tipo_de_tren) +
+  geom_step(size = 0.5) +
+  scale_color_manual(values = c(Total = "#34A2F2")) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(geo), scales = "free_y") + theme(axis.text = element_text(size = 8)) +labs(title = "Evolución de los pasajeros por KM de vía en los diferentes paises Europeos",
+    x = NULL, y = "Pasajeros por KM")
+
+Grafico_2C
+
+```
+
+Observamos el mismo problema de diversidad, podemos afrimar que algunos paises cada vez reportan menos pasajeros por kilómetro de via y a la inversa, como es el caso de España (ascendente) o el caso de Serbio o Dinamarca (descendente). 
+
+
+# Dividimos por tipo de tren
+
+```{r}
+Tren_Alta_Pasaj <- pasaj_via1 %>%
+  filter(Tipo_de_tren == "Tren Alta Velocidad") %>%
+  filter(Unidad_medidad == "Pasajeros")
+
+Tren_Media_Pasaj <- pasaj_via1 %>%
+  filter(Tipo_de_tren == "Tren Media Velocidad") %>%
+  filter(Unidad_medidad == "Pasajeros")
+
+Tren_Baja_Pasaj <- pasaj_via1 %>%
+  filter(Tipo_de_tren == "Tren Baja Velocidad") %>%
+  filter(Unidad_medidad == "Pasajeros")
+```
+
+Para verlo de forma mas clara vamos a dividir los gráficos en los tipos de tren que hay para intentar sacar mas conclusiones. Para ello debemos volver a filtrar, esta vez por tipo de tren.
+
+# Alta velocidad
+
+```{r, fig.width=10}
+
+Grafico_3 <- Tren_Alta_Pasaj %>%
+  filter(Año >= 2015L & Año <= 2019L) %>%
+  ggplot() +
+  aes(x = Año, y = Valores_Tren, colour = Tipo_de_tren) +
+  geom_step(size = 0.5) +
+  scale_color_manual(
+    values = c(`Tren Alta Velocidad` = "#34A2F2")
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(geo), scales = "free_y") + theme(axis.text = element_text(size = 12)) +labs(title = "Evolución de los pasajeros del tren de alta velocidad en los paises seleccionados",
+   x = NULL, y = "Pasajeros (en miles)") + theme(plot.title = element_text(size = 16))
+
+Grafico_3
+
+```
+
+# Media velocidad
+
+```{r, fig.width=10}
+
+Grafico_4 <- Tren_Media_Pasaj %>%
+  filter(Año >= 2008L & Año <= 2019L) %>%
+  ggplot() +
+  aes(x = Año, y = Valores_Tren, colour = Tipo_de_tren) +
+  geom_step(size = 0.5) +
+  scale_color_manual(
+    values = c(`Tren Media Velocidad` = "#34A2F2")
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(geo), scales = "free_y")+ theme(axis.text = element_text(size = 12)) + labs(title = "Evolución de los pasajeros del tren de media velocidad en los paises seleccionados",
+    x = NULL, y = "Pasajeros (en miles)") + theme(plot.title = element_text(size = 16))
+
+Grafico_4
+
+```
+
+# Baja velocidad
+
+```{r, fig.width=11, fig.height=10}
+Grafico_5 <- Tren_Baja_Pasaj %>%
+  filter(Año >= 2015L & Año <= 2019L) %>%
+  ggplot() +
+  aes(x = Año, y = Valores_Tren, colour = Tipo_de_tren) +
+  geom_step(size = 0.5) +
+  scale_color_manual(
+    values = c(`Tren Baja Velocidad` = "#34A2F2")
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(geo), scales = "free_y") + theme(axis.text = element_text(size = 8)) + labs(title = "Evolución de los pasajeros del tren de baja velocidad en los paises seleccionados",
+    x = NULL, y = "Pasajeros (en miles)") + theme(plot.title = element_text(size = 16))
+
+Grafico_5
+
+```
+
+# Particularidad en España
+
+Para acabar esta parte, vamos a señalar una particularidad que sucede si observamos a España de cerca
+
+# Tercer gráfico
+
+```{r, fig.width=10}
+Pasajeros_España <- pasaj_via1 %>% filter(geo == "Spain") %>% filter(Unidad_medidad == "Pasajeros")
+
+Grafico_España <- Pasajeros_España %>%
+  filter(Año >= 2007L & Año <= 2019L) %>%
+  ggplot() +
+  aes(x = Año, y = Valores_Tren, colour = geo) +
+  geom_step(size = 0.5) +
+  scale_color_manual(values = c(Spain = "#34A2F2")) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(Tipo_de_tren), scales = "free_y") + theme(axis.text = element_text(size = 10)) + labs(title = "Evolución de los pasajeros por tipo de tren en España",x = NULL, y = "Pasajeros (en miles)") 
+
+Grafico_España
+```
+
+# Posibles razones
+
+- Mayor oferta de trenes de media velocidad: En 2013, se pusieron en servicio varias líneas de tren de alta velocidad en España, lo que aumentó la oferta de servicios de media velocidad y hizo que fuera más fácil para los pasajeros acceder a estos trenes.
+
+- Precios más asequibles: Al aumentar la oferta de trenes de media velocidad, también se produjo una mayor competencia entre las diferentes empresas de ferrocarriles, lo que puede haber llevado a precios más asequibles para los pasajeros.
+
+- Mayor conciencia ambiental: En los últimos años, ha habido un mayor interés en opciones de transporte sostenibles y menos contaminantes, lo que puede haber llevado a un aumento del uso de trenes de media velocidad.
+
+- Cambios en el panorama económico: Es posible que el aumento del número de pasajeros en los trenes de media velocidad en España en 2013 también se deba a cambios en el panorama económico del país, como un aumento del turismo o un crecimiento de la economía en general.
+
+# 1.2 Mercancías
+
+En este segundo apartado, tras observar como España es de los países Europeos con mas vías a su disposicion, queremos comprobar si se le da mas uso, a parte del trasnporte de pasajeros, para sacarle mayor rentabilidad.
+
+## Primer gráfico
+
+```{r}
+#obtenemos los datos
+
+my_table <- "rail_if_line_na"      
+
+   
+df <- get_eurostat(my_table, time_format = 'raw', keepFlags = TRUE) 
+df_names <- names(df)
+df <- label_eurostat(df, code = df_names, fix_duplicated = TRUE)
+
+
+rail_2 <- df %>%
+  select (geo, time, values, tra_meas, tra_infr) %>% 
+  filter (geo %in% c("Spain","France","Italy","Sweden","Germany (until 1990 former territory of the FRG)")) %>% 
+  filter (time >=1995) %>% 
+  filter (tra_infr == "Total") %>% 
+  filter (tra_meas %in% c("Freight only", "Passengers and freight", "Passengers only")) %>%
+  mutate(geo = 
+           case_when(geo == "Spain" ~ "Spain",
+                     geo == "France" ~ "France", 
+                     geo == "Italy" ~ "Italy",
+                     geo == "Sweden" ~ "Sweden",
+                     geo == "Germany (until 1990 former territory of the FRG)" ~ "Germany"
+                     
+           ))
+
+
+rail_2$time <- as.numeric(rail_2$time)
+
+
+Grafico_ferran_1 <- ggplot(rail_2) +
+  aes(x = time, y = values, colour = tra_meas)  + 
+  geom_point()+
+  labs(
+    x = "Años",
+    y = "Km de vías (en miles)",
+    title = "Comparación de la evolución de los km de vías por el tipo de uso",
+    subtitle = "Pueden ser de pasajeros,
+    mixtas o exclusivamente de carga"
+  ) +
+  facet_wrap(vars(geo))+labs(colour = "Categoria de transporte") +
+  ggthemes::theme_base() 
+
+
+
+Grafico_ferran_1
+```
+
+## Segundo gráfico
+
+```{r}
+
+my_table_2 <- "rail_go_typeall"   
+
+     
+df_3 <- get_eurostat(my_table_2, time_format = 'raw', keepFlags = TRUE)
+df_names <- names(df_3)
+df_3 <- label_eurostat(df_3, code = df_names, fix_duplicated = TRUE)
+
+paises_3 <- df_3 %>% 
+  select (geo, time, values, unit, tra_cov) %>%
+  filter (geo %in% c("Spain","France","Italy","Sweden","Germany (until 1990 former territory of the FRG)")) %>% 
+  filter (time >=1995) %>% 
+  filter (unit == "Million tonne-kilometre (TKM)") %>% 
+  filter (tra_cov == "Total transport") %>%
+  mutate(geo = 
+           case_when(geo == "Spain" ~ "Spain",
+                     geo == "France" ~ "France", 
+                     geo == "Italy" ~ "Italy",
+                     geo == "Sweden" ~ "Sweden",
+                     geo == "Germany (until 1990 former territory of the FRG)" ~ "Germany"
+                     
+           ))
+  
+
+paises_3$time <- as.numeric(paises_3$time)
+
+p1 <-ggplot(paises_3) +
+  aes(x = time, y = values, colour = geo) +
+  geom_point(shape = "circle", size = 3) +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Años",
+    y = "Millones de toneladas por km de vía",
+    title = "Uso del tren para el transporte de mercancías"
+  ) +
+  ggthemes::theme_base() + theme(plot.title = element_text(size = 12))
+
+
+my_table_4 <- "road_go_ta_tott"       
+
+    
+df_5 <- get_eurostat(my_table_4, time_format = 'raw', keepFlags = TRUE)
+df_names <- names(df_5)
+df_5 <- label_eurostat(df_5, code = df_names, fix_duplicated = TRUE)
+
+paises_5 <- df_5 %>% 
+  select (geo, time, values, unit, carriage, tra_oper) %>%
+  filter (geo %in% c("Spain","France","Italy","Sweden","Germany (until 1990 former territory of the FRG)")) %>% 
+  filter (time >=1995) %>% 
+  filter (unit == "Million tonne-kilometre (TKM)") %>% 
+  filter (carriage == "Total") %>% 
+  filter(tra_oper == "Total - total transport") %>%
+  mutate(geo = 
+           case_when(geo == "Spain" ~ "Spain",
+                     geo == "France" ~ "France", 
+                     geo == "Italy" ~ "Italy",
+                     geo == "Sweden" ~ "Sweden",
+                     geo == "Germany (until 1990 former territory of the FRG)" ~ "Germany"
+                     
+           ))
+
+paises_5$time <- as.numeric(paises_5$time)
+
+p3 <-ggplot(paises_5) +
+  aes(x = time, y = values, colour = geo) +
+  geom_point(shape = "circle", size = 3) +
+  scale_color_hue(direction = 1) +
+  theme_classic() +
+  labs(
+    x = "Años",
+    y = "Millones de toneladas por km de carretera",
+    title = "Uso del camión para el transporte de mercancías"
+  ) +
+  ggthemes::theme_base() + theme(plot.title = element_text(size = 12))
+
+
+
+p4 <- p1 + p3
+
+p4
+```
+
+<font size="5"> Se observa que la mercancía transportada en España mediante el ferrocarril es más más baja que en Europa llegando a ser superado por Suecia. Esto viene determinado por la preferencia en españa por el transporte en camión, que es un medio de transporte más flexible y  que permite el transporte "puerta a puerta". Además este bajo uso del ferrocarril, también viene consicionado por el ancho de vía español (igual que el inglés)  que difiere del del resto de Europa, lo que impide un tránsito fluido una vez se quiere cruzar la frontera. </font> 
+
+
+# EL CASO ESPAÑOL
+
+## Análisis de los tipos de vía
+
+Analizaremos las estadísticas que confieren a los diferentes tipos de vías clasificados por su velocidad, con la finalidad de ver qué países son aquellos que cuentan con mayor kilometraje de vía de cada tipo.
+
+En este caso las categorías son 3, vías de baja velocidad, vías de media velocidad y vías de alta velocidad. Una vez obtenidos los datos, los hemos arreglado y dispuesto para obtener los gráficos que necesitamos para hacer más fácil nuestro análisis.
+
+## Primer gráfico
+
+```{r}
+
+#En primer lugar obtendremos la información para este apartado. Dado que ya sabemos que datos queremos, km de vía para la velocidad máxima de la misma, los indicamos. 
+my_table<- "rail_if_line_sp"
+# label_eurostat_tables(my_table) . Aquí podemos ver la descripción de los datos.
+
+# Obtenemos los datos y sustituímos los códigos de los países por sus nombres
+tipo_via <- get_eurostat(my_table, time_format = 'raw') 
+df_names <- names(tipo_via)
+tipo_via <- label_eurostat(tipo_via, code = df_names, fix_duplicated = TRUE)
+
+
+# Modificamos y arreglamos un poco los datos
+tipo_via_f <- tipo_via %>%
+  select(time, values, tra_infr, geo) %>%
+  mutate(time = as.numeric(time)) %>%
+  pivot_wider(names_from = tra_infr, values_from = values) %>% 
+  arrange(geo)
+
+tipo_via_f <- tipo_via_f %>%
+  rename(Baja_velocidad = "Conventional railway lines", Media_velocidad = "Upgraded high speed railway lines",     Alta_velocidad = "Dedicated high speed railway lines", Paises = "geo") %>%
+  dplyr::relocate(Alta_velocidad, .after = Media_velocidad)
+
+#Guardamos los datos por si acaso sufren alguna modificación. Además, ahora no necesitamos hacer todo el proceso anterior.
+dir.create("datos")
+ruta_via <- here::here("datos", "tipo_via_f.rds")
+rio::export(tipo_via_f, ruta_via)
+
+# Si necesitamos cargar los datos al global environment:
+# ruta_via <- here::here("datos", "tipo_via_f.rds")
+# tipo_via_f <-rio::import(ruta_via)
+
+Grafico_Total_km <- tipo_via_f %>%
+  filter(!is.na(Total)) %>%
+  ggplot() +
+  aes(x = time, y = Total, colour = Paises) +
+  geom_step() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Años",
+    y = "Km de vía (en miles)",
+    title = "Vías totales",
+    subtitle = "Kilómetros de via"
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  ylim(0, 32000)
+
+
+
+Grafico_bajav_km <- tipo_via_f %>%
+  filter(!is.na(Baja_velocidad)) %>%
+  ggplot() +
+  aes(x = time, y = Baja_velocidad, colour = Paises) +
+  geom_step() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Años",
+    y = "Km de vía (en miles)",
+    title = "Baja velocidad",
+    subtitle = "Kilómetros de via"
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  ylim(0, 22000)
+
+
+
+Grafico_mediav_km <- tipo_via_f %>%
+  filter(!is.na(Media_velocidad)) %>%
+  filter(!(Paises %in% c("Italy", "Kosovo (under United Nations Security Council Resolution 1244/99)", 
+                         "Latvia", "Lithuania", "Norway", "Serbia", "Türkiye", "United Kingdom", "Montenegro", "Greece", "Estonia"))) %>%
+  ggplot() +
+  aes(x = time, y = Media_velocidad, colour = Paises) +
+  geom_step() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Años",
+    y = "Km de vía (en miles)",
+    title = "Media velocidad",
+    subtitle = "Kilómetros de via"
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  ylim(0, 15000)
+
+
+
+Grafico_altav_km <- tipo_via_f %>%
+  filter(!is.na(Alta_velocidad)) %>%
+  filter(!(Paises %in% c("Czechia", "Estonia", "Finland", "Greece", "Kosovo (under United Nations Security Council Resolution 1244/99)", "Latvia", "Lithuania", "Montenegro", "Norway", "Portugal", "Serbia", "Sweden"))) %>%
+  ggplot() +
+  aes(x = time, y = Alta_velocidad, colour = Paises) +
+  geom_step() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Años",
+    y = "Km de vía (en miles)",
+    title = "Alta velocidad",
+    subtitle = "Kilómetros de via"
+  ) +
+  ggthemes::theme_base() +
+  theme(legend.position = "none") +
+  ylim(0, 3000)
+
+
+# Aquí vemos una combinación de los gráficos. oci <- (Grafico_Total_km | Grafico_bajav_km) / (Grafico_mediav_km | Grafico_altav_km)
+
+Grafico_veloci <- (Grafico_Total_km | Grafico_bajav_km) / (Grafico_mediav_km | Grafico_altav_km)
+
+Grafico_veloci_conjunto<- Grafico_veloci + plot_annotation(
+  title = 'Resumen de las diferentes velocidades',
+  subtitle = 'Estas 4 gráficas nos muestran los km por paises',
+  )
+
+Grafico_veloci_conjunto
+
+```
+
+
+#
+
+El primer gráfico que observamos es, de hecho, una agrupación de 4 gráficos diferentes, donde se puede observar la evolución histórica de los km de vía para cada país, tanto los totales como por categorías.
+
+No obstante, como se puede observar, no hemos dispuesto las leyendas para identificar cada país, dado que sería un ejercicio totalmente sinsentido, ya que hay países que, simplemente por su mayor superficie territorial cuentan con mayor kilometraje de vía.
+
+Por tanto, lo que haremos a continuación será obtener los datos de superficie en km2 del Banco Mundial.
+
+## Superficie
+
+```{r, echo=TRUE}
+#Todo y que podríamos detenernos a observar las evoluciones y km de vía, es un ejercicio absurdo, dado que la simple grandaria de un país puede explicar la existencia de más kilometraje. Por tanto, intentaremos analizar las cuatro variables usando como unidad de medida kilómetros de via por kilómetro cuadrado del país. 
+
+# Obtenemos los datos de superfície del banco mundial
+library(WDI)  #install.packages('WDI')
+
+km_superf <- WDI(indicator = "AG.SRF.TOTL.K2", start = 2020, end = 2020, country = c("AT","BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "GB"))
+
+km_superf <- km_superf %>%
+  select(country, AG.SRF.TOTL.K2) %>%
+  rename(Km_2 = AG.SRF.TOTL.K2, Paises = "country")
+
+datatable(km_superf, options = list(pageLength = 5))
+
+```
+
+
+#
+
+Por último, dividiremos los datos en 4 tablas, las cuales contienen cada una los datos de superficie, y luego una de las categorías o los datos totales. Ahora creamos una nueva columna que resulta del cálculo del número de km de vía entre los km2 de superficie. A partir de estos datos hacemos gráficos de columnas, para ver los datos de una forma más clara y analizarlos a continuación.
+
+## Segundo gráfico
+
+Este gráfico nos muestra el porcentaje de kilómetros totales de vías sobre superficie del territorio. También observamos un mapa que resume estas estadísticas de una forma más ilustrativa.
+
+```{r, fig.height= 10}
+
+km_vias_superficie <- inner_join(tipo_via_f, km_superf, by = "Paises")
+
+#Guardamos los datos
+ruta_via <- here::here("datos", "km_vias_superficie.rds")
+rio::export("km_vias_superficie", ruta_via)
+
+
+# A continuación lo que haremos será calcular para cada dato los km de via sobre los km2
+
+total_km <- km_vias_superficie %>%
+  select(time, Paises, Total, Km_2) %>%
+  filter(time == "2020") %>%
+  mutate(Via_por_km2 = (Total/Km_2)*100) %>%
+  arrange(Via_por_km2)
+
+# En estos casos además también lo haremos sobre 
+baja_km <- km_vias_superficie %>%
+  select(time, Paises, Baja_velocidad, Km_2, Total) %>%
+  filter(!is.na(Baja_velocidad)) %>%
+  filter(time == "2020") %>%
+  mutate(Via_por_km2 = (Baja_velocidad/Km_2)*100) %>%
+  arrange(Via_por_km2) %>%
+  mutate(Baja_por_total = (Baja_velocidad/Total)*100)
+
+
+media_km <- km_vias_superficie %>%
+  select(time, Paises, Media_velocidad, Km_2, Total) %>%
+  filter(!is.na(Media_velocidad)) %>%
+  filter(time == "2020") %>%
+  mutate(Via_por_km2 = (Media_velocidad/Km_2)*100) %>%
+  filter(Via_por_km2 > 0) %>%
+  arrange(Via_por_km2) %>%
+  mutate(Media_por_total = (Media_velocidad/Total)*100)
+
+
+alta_km <- km_vias_superficie %>%
+  select(time, Paises, Alta_velocidad, Km_2, Total) %>%
+  filter(!is.na(Alta_velocidad)) %>%
+  filter(time == "2020") %>%
+  mutate(Via_por_km2 = (Alta_velocidad/Km_2)*100) %>% 
+  filter(Via_por_km2 > 0) %>%
+  arrange(Via_por_km2)  %>%
+  mutate(Alta_por_total = (Alta_velocidad/Total)*100)
+
+#A continuación haremos gráficos para ilustrar los resultados anteriores
+
+graf_total_porc <- ggplot(total_km) +
+  aes(x = Paises, y = Via_por_km2, colour = Paises) +
+  geom_col(fill = "#000000") +
+  scale_color_manual(
+    values = c(Austria = "#F8766D",
+               Bulgaria = "#E98043",
+               Croatia = "#DB8B19",
+               Czechia = "#C99500",
+               Denmark = "#B19E00",
+               Estonia = "#99A700",
+               Finland = "#69AE0F",
+               France = "#31B425",
+               Greece = "#00BA3C",
+               Hungary = "#00BC64",
+               Italy = "#00BF8B",
+               Latvia = "#00BFAB",
+               Lithuania = "#00BCC5",
+               Luxembourg = "#00B9DF",
+               Netherlands = "#20AFEC",
+               Poland = "#45A4F6",
+               Portugal = "#6C98FE",
+               Romania = "#9B88FD",
+               Slovenia = "#C978FB",
+               Spain = "#E36DED",
+               Sweden = "#F167D8",
+               `United Kingdom` = "#FF61C3")
+  ) +
+  labs(
+    y = "Datos en porcentaje KmVias/Km2",
+    title = "Porcentaje de kilómetros totales de vias sobre superfície del territorio"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+ggplotly (graf_total_porc)
+```
+
+## Mapa de Europa
+
+También hemos decidido hacer un mapa para demostrar nuestras skills
+
+```{r}
+data(World)
+world <- World ; rm(World)
+world <- world %>%
+  rename(Paises = "name")
+df_mapa <- full_join(world, total_km, by = "Paises")
+
+
+mypalette <- colorNumeric( palette="Greys", domain=df_mapa$Via_por_km2,na.color="transparent")
+
+mytext <- paste(
+  "País: ", df_mapa$Paises,"<br/>", 
+  "Superfície en km2: ",  df_mapa$Km_2, "<br/>", 
+  "Kilómetros de vía por km2 (en %): ", df_mapa$Via_por_km2, 
+  sep="") %>%
+  lapply(htmltools::HTML)
+mapa_kmvias_km2 <- leaflet(df_mapa) %>% 
+  addTiles()  %>% 
+  setView( lat=10, lng=0 , zoom=2) %>%
+  addPolygons( 
+    fillColor = ~mypalette(Via_por_km2), 
+    stroke=TRUE, 
+    fillOpacity = 0.9, 
+    color="white", 
+    weight=0.3,
+    label = mytext,
+    labelOptions = labelOptions( 
+      style = list("font-weight" = "normal", padding = "3px 8px"), 
+      textsize = "13px", 
+      direction = "auto"
+    )
+  ) %>%
+  addLegend( pal=mypalette, values=~Via_por_km2, opacity=0.9, title = "% de vias por Km2", position = "bottomleft" )
+
+
+mapa_kmvias_km2
+
+```
+
+#
+
+Como podemos observar, hay ciertos países que destacan por tener gran cantidad de vías respecto al tamaño del país, como son la República Checa, Luxemburgo, Holanda o Hungría, países que tienen territorios no muy extensos y en algunos casos son países de rentas elevadas.
+
+En cambio, si nos fijamos en países que tengan superficie territorial parecida a la de nuestro país, como son Reino Unido o Francia vemos que tienen una proporción mucho más elevada que la nuestra. No obstante, si ahora nos fijamos en países con rentas e incluso se podría decir que culturas parecidas, mediterráneas, como Portugal, Grecia o Italia, no podemos extraer conclusiones claras, ya que en algunos casos es superior, en otros parecida y en otros tantos inferior
+
+# Dividimos por tipo de vía
+
+## Vías de baja velocidad
+
+```{r, fig.height=7}
+#Ahora por velocidad máxima de la vía 
+
+graf_baja_porc <- ggplot(baja_km) +
+  aes(x = Paises, colour = Paises, weight = Via_por_km2) +
+  geom_bar(fill = "#000000") +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Datos en porcentaje Km Vias/Km2",
+    title = "Kilómetros de vias de baja velocidad sobre superfície del territorio"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+graf_baja_total <- ggplot(baja_km) +
+  aes(x = Paises, colour = Paises, weight = Baja_por_total) +
+  geom_bar(fill = "#000000") +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Datos en porcentaje Km Vias baja velocidad/Total km via",
+    title = "Kilómetros de vias de baja velocidad sobre km totales de vía"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+graf_baja_doble <- graf_baja_porc + graf_baja_total 
+
+graf_baja_doble <- graf_baja_doble + plot_annotation(
+  title = 'Comparación entre vías de velocidad baja sobre km2 y sobre km de vía totales',
+  subtitle = 'Proporciones en %',
+)& theme(text = element_text('mono'))
+
+ggplotly(graf_baja_doble)
+
+```
+
+#
+
+En el caso de este tipo de vías podemos destacar dos cosas. La primera de ellas las observamos en el primer gráfico, que como podemos ver países como Reino Unido, Italia o Eslovenia tienen una alta cantidad de vías si la comparamos al resto de países. De mientras, España tiene la misma cantidad de vías de cercanías que otros como Francia o Grecia.
+
+No obstante, lo que es peculiar es que la gran mayoría de los países de los que observamos datos únicamente cuentan con vías de este tipo. Las únicas naciones que poseen vías de superior velocidad son España, Finlandia, Francia, Italia y Reino Unido (aunque este muy poco de otros tipos). Por tanto, se este hecho explica las elevadas proporciones que observamos en el otro gráfico respecto a países como Reino Unido o Eslovenia.
+
+Así, estos países ven limitada su infraestructura ferroviaria con vías de menor velocidad y que generalmente tienen líneas de menor recorrido, lo cual dificulta la movilidad tanto de pasajeros como de mercancías
+
+## Vías de media velocidad
+
+
+```{r, fig.height=7}
+graf_media_porc <- ggplot(media_km) +
+  aes(x = Paises, y = Via_por_km2, colour = Paises) +
+  geom_col(fill = "#000000") +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Datos en porcentaje KmVias/Km2",
+    title = "Porcentaje de kilómetros de vias de media velocidad sobre superfície del territorio"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+graf_media_total <- ggplot(media_km) +
+  aes(x = Paises, y = Media_por_total, colour = Paises) +
+  geom_col(fill = "#000000") +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Datos en porcentaje Km Vias de media velocidad /Km de vías totales",
+    title = "Porcentaje de kilómetros de vias de media velocidad sobre km totales de vías"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+
+graf_media_doble <- graf_media_porc + graf_media_total 
+
+graf_media_doble <- graf_media_doble + plot_annotation(
+  title = 'Comparación entre vías de velocidad media sobre km2 y sobre km de vía totales',
+  subtitle = 'Proporciones en %',
+)& theme(text = element_text('mono'))
+
+ggplotly(graf_media_doble)
+
+```
+
+# 
+
+Como vemos, contamos con pocos datos porque no todos los países tienen vías superiores a las de velocidad baja. En este caso, podemos ver como este tipo de vías escasean en España, mientras que en Finlandia la proporción sobre el total de vías roza el 20%. Francia supera el 30%, así como tener una proporción elevada respecto a la superficie del país, y con mucha diferencia respecto a los otros dos países.
+
+Este es uno de los problemas que se plantean en el libro. Y es que son las vías de media velocidad la que permiten una combinación de transporte de pasajeros junto con el de mercancías. Así, todo y que Francia tiene un problema de infraestructura parecido al de España, con una estructura “radial” que tiene su foco en la capital, de donde salen o acaban la gran parte de las vías, sigue contando con un sistema de transporte mixto. A continuación, observaremos las vías de alta velocidad para acabar de comprender este tema.
+
+## Vías de alta velocidad
+
+```{r, fig.height=7}
+
+graf_alta_porc <- ggplot(alta_km) +
+  aes(x = Paises, colour = Paises, weight = Via_por_km2) +
+  geom_bar(fill = "#000000") +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Datos en porcentaje KmVias/Km2",
+    title = "Porcentaje de kilómetros de vias de alta velocidad sobre superfície del territorio"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+graf_alta_total <- ggplot(alta_km) +
+  aes(x = Paises, colour = Paises, weight = Alta_por_total) +
+  geom_bar(fill = "#000000") +
+  scale_color_hue(direction = 1) +
+  labs(
+    y = "Datos en porcentaje Km Vias de alta velocidad/Km de vías totales",
+    title = "Porcentaje de kilómetros de vias de alta velocidad sobre km de vías totales"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+
+graf_alta_doble <- graf_alta_porc + graf_alta_total 
+
+graf_alta_doble <- graf_alta_doble + plot_annotation(
+  title = 'Comparación entre vías de velocidad alta sobre km2 y sobre km de vía totales',
+  subtitle = 'Proporciones en %',
+)& theme(text = element_text('mono'))
+
+ggplotly(graf_alta_doble)
+
+
+```
+
+#
+
+La historia en este caso es totalmente diferente, dado que ahora las estadísticas dan un giro respecto al caso de Francia y España. En estes caso, es España la que cuenta con mayor número de vías de alta velocidad respecto a superficie y también sobre el total, siendo este último un dato muy destacado respecto a los otros países.
+
+# Ya llegamos al final!!!
+
+## Cocnlusiones
+
+Como podemos observar en los gráficos de [graf_media_doble](#vías-de-media-velocidad) y [graf_alta_doble](#vías-de-alta-velocidad) comparado con [Grafico_España](#tercer-gráfico) podemos observar claramente como España, pese a ser el país europeo con más vías de alta velocidad respecto al total de km de Europa, los pasajeros siguen sin ser muy elevados. De hecho, es notablemente mayor la afluencia en baja velocidad, e incluso en media también lo es.
+
+Así, vemos claramente un desuso de la infraestructura de alta velocidad, que a pesar de ser la más extensa es la menos utilizada. El motivo no se adhiere a toda la red, dado que este recae especialmente sobre algunos trayectos que unen la capital con algunas provincias (como por ejemplo Castilla y León, hasta llegar a A Coruña), que se hicieron por motivaciones políticas y no por unos estudios que concluyeran que esos tramos iban a ser rentables.
+
+El hecho de construir tantas vías de alta velocidad ha provocado ha sido un desvío de capitales hacía esta causa sin justificación alguna, dado el infra uso de la gran parte de las vías construidas, y que no han permitido mejorar los otros servicios de media y baja velocidad, que cuentan con mayor afluencia de pasajeros.
+
+#
+
+Además, hablando del transporte de mercancías, [p4](#segundo-gráfico-1) , observamos que España es un país que transporta muchas más mercancías por carretera que por tren en pesos relatives de km de vía. Así, España es la que menos rendimiento extrae de su extensa infraestructura.
+
+El motivo es que las vías de alta velocidad son exclusivas para el transporte de pasajeros, mientras que las de media y baja velocidad pueden combinar ambos tipos de transporte sin ningún inconveniente, lo que permite aprovechar mejor la infraestructura combinando ambos usos.
+
+#
+
+En síntesis, España se presenta en Europa como el mayor poseedor de vías de alta velocidad, más que países con más superficie, y que además se debe a un “capricho” de unos pocos y que ahora supone un problema tanto de eficiencia como de gasto constante. Todavía estamos pagando la construcción de algunos tramos que ni ahora, ni probablemente nunca, lleguen a ser rentables por su afluencia de pasajeros. 
+
+ 
+
+De este modo vemos como un gobierno central que se ha centrado demasiado en dotar de posibilidades a unos pocos, han acabado por descuidar a la gran mayoría, que seguimos padeciendo todos los días problemas, retrasos, inconvenientes, largos tiempos de espera… por la baja inversión que se dedica, de hecho, a los tramos con más afluencia de pasajeros, como son especialmente los de cercanías.
+
+#
+
+En definitiva, debemos dar una buena revisión al modelo radial que presenta actualmente España, y revaluar toda la red estructural del país para dotarla de cambios (bien sea dejar de usar tramos no rentables, dedicar esta inversión a la creación de nuevos o mejorar los que sí lo son…) que supongan mejorar el bienestar del conjunto de los usuarios, y no, por decirlo claro, facilitar que los del centro (LOS MADRILEÑOS) se puedan ir de vacaciones a la playa cómodamente.
+
+<div>
+<p style = 'text-align:center;'>
+<img src="https://i.ibb.co/tBqtRfP/meme2.jpg" alt="JuveYell" width="400px">
+</p>
+</div>
+
+# ¡¡Y final!! ¡¡Muchas gracias a todos!!
+
+
+
+
